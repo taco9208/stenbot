@@ -1,26 +1,6 @@
 // ═══════════════════════════════════════════════════════════════
 // STEN — standalone assistant / chat Telegram bot (Cloudflare Worker)
-// Stoic, straightforward. Daily 6:30am PT stoic morning brief.
-//
-// ── SETUP ─────────────────────────────────────────────────────
-// 1. @BotFather -> /newbot -> copy the NEW token
-// 2. New GitHub repo (e.g. sten-bot): src/index.js = this file,
-//    plus wrangler.toml (see below).
-// 3. Cloudflare -> Create -> Import repository -> deploy
-// 4. Secrets (type: Secret): ANTHROPIC_API_KEY, TELEGRAM_TOKEN, APP_PIN
-// 5. Cron trigger: "30 13 * * *"  = 6:30am Pacific in summer (PDT).
-//    Winter (PST): change to "30 14 * * *".
-// 6. Visit https://<worker>.workers.dev/setup?pin=<APP_PIN>
-// 7. /start to the bot. First chat becomes owner.
-//
-// wrangler.toml:
-//   name = "sten-bot"
-//   main = "src/index.js"
-//   compatibility_date = "2024-01-01"
-//
-//   [[kv_namespaces]]
-//   binding = "KV"
-//   id = "YOUR_REN_STATE_ID"     (reuse it; keys are prefixed "sten:")
+// Now using Grok API (xAI)
 // ═══════════════════════════════════════════════════════════════
 
 const SYSTEM = `You are Sten, Otto's personal assistant and confidant, in Telegram.
@@ -93,7 +73,7 @@ export default {
     return new Response("Sten is running.", { headers: { "content-type": "text/plain" } });
   },
 
-  // AUTOPILOT — 6:30am PT morning brief ("30 13 * * *" in summer)
+  // AUTOPILOT — 6:30am PT morning brief
   async scheduled(event, env, ctx) {
     const owner = await env.KV.get("sten:owner");
     if (!owner) return;
@@ -122,9 +102,6 @@ async function handleMessage(env, chatId, text) {
     await tgSend(env, chatId, "Cleared. Start fresh.");
     return;
   }
-  if (cmd) {
-    // unknown slash command — just treat it as normal talk
-  }
 
   const state = await loadState(env, chatId);
   await runTurn(env, chatId, state, text);
@@ -134,7 +111,7 @@ async function runTurn(env, chatId, state, userText) {
   const msgs = state.history.slice(-30).concat([{ role: "user", content: userText }]);
   let raw;
   try {
-    raw = await askClaude(env, SYSTEM, msgs);
+    raw = await askGrok(env, SYSTEM, msgs);
   } catch (e) {
     await tgSend(env, chatId, "Error: " + (e && e.message ? e.message : "unknown") +
       "\nSend it again.");
@@ -159,29 +136,36 @@ async function saveState(env, chatId, s) {
   await env.KV.put("sten:state:" + chatId, JSON.stringify(s));
 }
 
-async function askClaude(env, system, messages) {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
+// ====================== GROK API ======================
+async function askGrok(env, system, messages) {
+  const res = await fetch("https://api.x.ai/v1/chat/completions", {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-api-key": env.ANTHROPIC_API_KEY || "",
-      "anthropic-version": "2023-06-01"
+      "Authorization": `Bearer ${env.GROK_API_KEY || ""}`
     },
     body: JSON.stringify({
-      model: env.MODEL || "claude-haiku-4-5",
+      model: env.MODEL || "grok-4.1-fast",   // or "grok-4.3"
+      messages: [
+        { role: "system", content: system },
+        ...messages
+      ],
       max_tokens: 1000,
-      system, messages
+      temperature: 0.7
     })
   });
+
   const raw = await res.text();
   if (!res.ok) throw new Error("API " + res.status + ": " + raw.slice(0, 200));
+
   let data = null;
   try { data = JSON.parse(raw); } catch (_) {}
-  const text = ((data && data.content) || []).map(b => b.text || "").join("");
-  if (!text) throw new Error("Empty: " + raw.slice(0, 200));
+  const text = data?.choices?.[0]?.message?.content || "";
+  if (!text) throw new Error("Empty response: " + raw.slice(0, 200));
   return text;
 }
 
+// Telegram helpers (unchanged)
 function tgRaw(env, method, payload) {
   return fetch("https://api.telegram.org/bot" + env.TELEGRAM_TOKEN + "/" + method, {
     method: "POST",
