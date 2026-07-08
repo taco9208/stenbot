@@ -1,0 +1,7 @@
+name = "sten-bot"
+main = "src/index.js"
+compatibility_date = "2024-01-01"
+
+[[kv_namespaces]]
+binding = "KV"
+id = "f955ac3320e0412da13d9350f7f86582"
