@@ -145,7 +145,7 @@ async function askGrok(env, system, messages) {
       "Authorization": `Bearer ${env.GROK_API_KEY || ""}`
     },
     body: JSON.stringify({
-      model: env.MODEL || "grok-4.1-fast",   // or "grok-4.3"
+      model: env.MODEL || "grok-4.3",   // or "grok-4.3"
       messages: [
         { role: "system", content: system },
         ...messages
